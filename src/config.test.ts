@@ -9,6 +9,7 @@ import {
   codexUserAgent,
   codexModel,
   codexEffort,
+  codexProxy,
   kimiUserAgent,
   kimiOauthHost,
   kimiBaseUrl,
@@ -43,6 +44,7 @@ describe("config defaults", () => {
     expect(codexUserAgent("default-ua")).toBe("default-ua")
     expect(codexModel()).toBeUndefined()
     expect(codexEffort()).toBeUndefined()
+    expect(codexProxy()).toBeUndefined()
     expect(kimiUserAgent("default-kimi-ua")).toBe("default-kimi-ua")
     expect(kimiOauthHost()).toBe("https://auth.kimi.com")
     expect(kimiBaseUrl()).toBe("https://api.kimi.com/coding/v1")
@@ -65,6 +67,15 @@ describe("file overrides default", () => {
     )
     setEnv({})
     expect(codexUserAgent("default")).toBe("ccp/file")
+  })
+
+  it("codex.proxy from config.json", () => {
+    writeFileSync(
+      configPath,
+      JSON.stringify({ codex: { proxy: "http://proxy.local:8080" } }),
+    )
+    setEnv({})
+    expect(codexProxy()).toBe("http://proxy.local:8080")
   })
 
   it("kimi.oauthHost from config.json", () => {
@@ -109,6 +120,39 @@ describe("env overrides file", () => {
     expect(kimiUserAgent("default")).toBe("generic-env")
   })
 
+  it("CCP_CODEX_PROXY env wins over generic proxy env and config", () => {
+    writeFileSync(
+      configPath,
+      JSON.stringify({ codex: { proxy: "http://from-file:8080" } }),
+    )
+    setEnv({
+      CCP_CODEX_PROXY: "http://codex-env:8080",
+      HTTPS_PROXY: "http://https-env:8080",
+    })
+    expect(codexProxy()).toBe("http://codex-env:8080")
+  })
+
+  it("HTTPS_PROXY env wins over HTTP_PROXY env and config", () => {
+    writeFileSync(
+      configPath,
+      JSON.stringify({ codex: { proxy: "http://from-file:8080" } }),
+    )
+    setEnv({
+      HTTPS_PROXY: "http://https-env:8080",
+      HTTP_PROXY: "http://http-env:8080",
+    })
+    expect(codexProxy()).toBe("http://https-env:8080")
+  })
+
+  it("HTTP_PROXY env wins over config", () => {
+    writeFileSync(
+      configPath,
+      JSON.stringify({ codex: { proxy: "http://from-file:8080" } }),
+    )
+    setEnv({ HTTP_PROXY: "http://http-env:8080" })
+    expect(codexProxy()).toBe("http://http-env:8080")
+  })
+
   it("logStderr env-set forces true even when config sets false", () => {
     writeFileSync(configPath, JSON.stringify({ log: { stderr: false } }))
     setEnv({ CCP_LOG_STDERR: "1" })
@@ -126,6 +170,19 @@ describe("empty-string semantics", () => {
   it("empty CCP_CODEX_MODEL env with no file value returns undefined", () => {
     setEnv({ CCP_CODEX_MODEL: "" })
     expect(codexModel()).toBeUndefined()
+  })
+
+  it("empty proxy env falls through to the next proxy source", () => {
+    writeFileSync(
+      configPath,
+      JSON.stringify({ codex: { proxy: "http://from-file:8080" } }),
+    )
+    setEnv({
+      CCP_CODEX_PROXY: "",
+      HTTPS_PROXY: "",
+      HTTP_PROXY: "http://http-env:8080",
+    })
+    expect(codexProxy()).toBe("http://http-env:8080")
   })
 
   it("empty PORT env falls through to file value", () => {

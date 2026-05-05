@@ -34,9 +34,7 @@ async function attemptPostCodex(
   ctx: RequestContext,
   log: Logger,
 ): Promise<CodexResponse> {
-  // Random jitter to mimic human-paced request intervals and reduce
-  // detection by upstream behavioral analysis (200–800ms).
-  const jitter = 200 + Math.random() * 600
+  const jitter = 50 + Math.random() * 150
   await new Promise((r) => setTimeout(r, jitter))
 
   let auth = await getAuth()
@@ -106,7 +104,7 @@ async function doFetch(
   })
 
   const proxyUrl = codexProxy()
-  if (proxyUrl) log.debug("using proxy", { proxy: proxyUrl })
+  if (proxyUrl) log.debug("using proxy", { enabled: true })
 
   return fetch(CODEX_API_ENDPOINT, {
     method: "POST",
