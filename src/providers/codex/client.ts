@@ -2,10 +2,11 @@ import { CODEX_API_ENDPOINT, ORIGINATOR as ORIGINATOR_DEFAULT } from "./auth/con
 import { codexOriginator, codexUserAgent, codexProxy } from "../../config.ts"
 declare const BUILD_VERSION: string | undefined
 const PROXY_VERSION = typeof BUILD_VERSION === "string" ? BUILD_VERSION : "dev"
-import { forceRefresh, getAuth } from "./auth/manager.ts"
+import { forceRefresh, getAuth, markAccountUnavailable } from "./auth/manager.ts"
 import type { Logger } from "../../log.ts"
 import type { RequestContext } from "../types.ts"
 import type { ResponsesRequest } from "./translate/request.ts"
+import type { StoredAuthAccount } from "./auth/token-store.ts"
 import { retryOn429 } from "../retry.ts"
 
 export interface CodexResponse {
@@ -29,37 +30,78 @@ export async function postCodex(
   })
 }
 
+const MAX_ACCOUNT_ATTEMPTS = 8
+
 async function attemptPostCodex(
   body: ResponsesRequest,
   ctx: RequestContext,
   log: Logger,
 ): Promise<CodexResponse> {
+  const tried = new Set<string>()
+  let lastError: CodexError | undefined
+
+  for (let accountAttempt = 0; accountAttempt < MAX_ACCOUNT_ATTEMPTS; accountAttempt++) {
+    let auth: StoredAuthAccount
+    try {
+      auth = await getAuth(tried)
+    } catch (err) {
+      if (lastError) throw lastError
+      throw err
+    }
+    tried.add(auth.id)
+
+    const result = await attemptWithAccount(auth, body, ctx, log)
+    if (result instanceof CodexError) {
+      lastError = result
+      if (result.status === 401 || result.status === 429) {
+        await markAccountUnavailable(auth.id, result.meta?.retryAfter)
+        log.warn("codex account unavailable, rotating", {
+          status: result.status,
+          account: auth.accountId ?? auth.id,
+        })
+        continue
+      }
+      throw result
+    }
+    return result
+  }
+
+  throw lastError ?? new CodexError(429, "No available Codex accounts")
+}
+
+async function attemptWithAccount(
+  auth: StoredAuthAccount,
+  body: ResponsesRequest,
+  ctx: RequestContext,
+  log: Logger,
+): Promise<CodexResponse | CodexError> {
   const jitter = 50 + Math.random() * 150
   await new Promise((r) => setTimeout(r, jitter))
 
-  let auth = await getAuth()
-  let resp = await doFetch(auth.access, auth.accountId, body, log, ctx.signal, ctx.sessionId)
+  let current = auth
+  let resp = await doFetch(current.access, current.accountId, body, log, ctx.signal, ctx.sessionId)
 
   if (resp.status === 401) {
-    log.warn("got 401, refreshing token", {})
+    log.warn("got 401, refreshing token", { account: current.accountId ?? current.id })
     try {
-      auth = await forceRefresh()
-      resp = await doFetch(auth.access, auth.accountId, body, log, ctx.signal, ctx.sessionId)
+      current = await forceRefresh(current.id)
+      resp = await doFetch(current.access, current.accountId, body, log, ctx.signal, ctx.sessionId)
     } catch (err) {
-      log.error("refresh after 401 failed", { err: String(err) })
+      log.error("refresh after 401 failed", { account: current.accountId ?? current.id, err: String(err) })
+      return new CodexError(401, "Authentication failed", String(err))
     }
   }
 
   if (resp.status === 403) {
     const text = await safeText(resp)
-    log.error("403 from upstream (non-refreshable)", { body: text })
+    log.error("403 from upstream (non-refreshable)", { body: text, account: current.accountId ?? current.id })
     throw new CodexError(403, "Forbidden", text)
   }
 
   if (resp.status === 429) {
     const retryAfter = resp.headers.get("retry-after") || undefined
     const text = await safeText(resp)
-    throw new CodexError(429, "Rate limited", text, { retryAfter })
+    return new CodexError(429, "Rate limited", text, { retryAfter })
   }
 
   if (!resp.ok) {

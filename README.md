@@ -53,7 +53,10 @@ claude-code-proxy codex auth login     # browser OAuth (PKCE)
 claude-code-proxy codex auth device    # device-code flow
 ```
 
-Sign in with your **ChatGPT Plus/Pro account**, not an OpenAI API account.
+Sign in with your **ChatGPT Plus/Pro account**, not an OpenAI API account. You
+can run `codex auth login` or `codex auth device` more than once to register
+multiple Codex accounts. Requests rotate across stored accounts, and an account
+is temporarily skipped after a rate limit or authentication failure.
 
 **Kimi (kimi.com Kimi Code):**
 
@@ -234,12 +237,17 @@ The proxy surfaces that verbatim.
 
 Auth:
 
-| Command             | What it does                               |
-| ------------------- | ------------------------------------------ |
-| `codex auth login`  | Browser OAuth (PKCE) via `auth.openai.com` |
-| `codex auth device` | Device-code OAuth for headless machines    |
-| `codex auth status` | Show account ID + token expiry             |
-| `codex auth logout` | Delete stored credentials                  |
+| Command             | What it does                                      |
+| ------------------- | ------------------------------------------------- |
+| `codex auth login`  | Browser OAuth (PKCE); adds or updates an account  |
+| `codex auth device` | Device-code OAuth; adds or updates an account     |
+| `codex auth status` | Show all accounts, token expiry, and cooldowns    |
+| `codex auth logout` | Delete all stored Codex credentials               |
+
+When multiple Codex accounts are stored, the proxy selects them round-robin per
+request. A `429` response or a failed refresh after `401` marks that account on
+cooldown and the request is retried with the next available account. If every
+account is unavailable, the last upstream error is returned.
 
 ### Kimi (Kimi Code)
 

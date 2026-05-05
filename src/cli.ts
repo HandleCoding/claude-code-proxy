@@ -98,7 +98,7 @@ function usageAndExit(): never {
                                                Upstream is chosen per-request from ANTHROPIC_MODEL.
   claude-code-proxy <provider> auth login      Browser OAuth
   claude-code-proxy <provider> auth device     Device-code OAuth
-  claude-code-proxy <provider> auth status     Show current auth
+  claude-code-proxy <provider> auth status     Show stored auth
   claude-code-proxy <provider> auth logout     Clear stored auth
   claude-code-proxy --version                  Show version
 
