@@ -26,6 +26,8 @@ export function translateStream(
         controller.enqueue(encoder.encode(encodeSseEvent(event, data)))
       }
       const activeTools = new Map<number, { id: string; name: string }>()
+      // Track all open content blocks (text + tool) so we can close them on error
+      const openBlocks = new Set<number>()
       let messageStarted = false
       const ensureMessageStart = () => {
         if (messageStarted) return
@@ -56,6 +58,7 @@ export function translateStream(
           switch (e.kind) {
             case "text-start":
               ensureMessageStart()
+              openBlocks.add(e.index)
               emit("content_block_start", {
                 type: "content_block_start",
                 index: e.index,
@@ -70,11 +73,13 @@ export function translateStream(
               })
               break
             case "text-stop":
+              openBlocks.delete(e.index)
               emit("content_block_stop", { type: "content_block_stop", index: e.index })
               break
             case "tool-start":
               activeTools.set(e.index, { id: e.id, name: e.name })
               ensureMessageStart()
+              openBlocks.add(e.index)
               emit("content_block_start", {
                 type: "content_block_start",
                 index: e.index,
@@ -95,6 +100,7 @@ export function translateStream(
               break
             case "tool-stop":
               activeTools.delete(e.index)
+              openBlocks.delete(e.index)
               emit("content_block_stop", { type: "content_block_stop", index: e.index })
               break
             case "finish":
@@ -120,6 +126,11 @@ export function translateStream(
             activeToolCalls,
           })
           ensureMessageStart()
+          // Close any open content blocks before emitting the error
+          for (const idx of openBlocks) {
+            emit("content_block_stop", { type: "content_block_stop", index: idx })
+          }
+          openBlocks.clear()
           emit("error", {
             type: "error",
             error: {
@@ -134,6 +145,11 @@ export function translateStream(
             activeToolCalls,
           })
           ensureMessageStart()
+          // Close any open content blocks before emitting the error
+          for (const idx of openBlocks) {
+            emit("content_block_stop", { type: "content_block_stop", index: idx })
+          }
+          openBlocks.clear()
           emit("error", {
             type: "error",
             error: { type: "api_error", message: String(err) },

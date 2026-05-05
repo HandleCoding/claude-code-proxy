@@ -1,6 +1,7 @@
 import { CLIENT_ID, ISSUER, REFRESH_MARGIN_MS } from "./constants.ts"
 import { extractAccountId, type TokenResponse } from "./jwt.ts"
 import { loadAuth, saveAuth, type StoredAuth } from "./token-store.ts"
+import { codexProxy } from "../../../config.ts"
 
 function validateTokenResponse(t: unknown): asserts t is TokenResponse {
   if (!t || typeof t !== "object") throw new Error("Invalid token response: not an object")
@@ -46,7 +47,8 @@ export async function forceRefresh(): Promise<StoredAuth> {
 }
 
 async function refreshNow(current: StoredAuth): Promise<StoredAuth> {
-  const resp = await fetch(`${ISSUER}/oauth/token`, {
+  const proxyUrl = codexProxy()
+  const fetchOpts: RequestInit & { proxy?: string } = {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
@@ -54,7 +56,9 @@ async function refreshNow(current: StoredAuth): Promise<StoredAuth> {
       refresh_token: current.refresh,
       client_id: CLIENT_ID,
     }).toString(),
-  })
+    ...(proxyUrl ? { proxy: proxyUrl } : {}),
+  }
+  const resp = await fetch(`${ISSUER}/oauth/token`, fetchOpts as RequestInit)
   if (!resp.ok) throw new Error(`Token refresh failed: ${resp.status}`)
   const tokens = await resp.json()
   validateTokenResponse(tokens)

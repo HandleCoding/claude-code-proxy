@@ -1,6 +1,7 @@
 import { createServer } from "node:http"
 import { CLIENT_ID, ISSUER, OAUTH_PORT, OAUTH_REDIRECT_URI, ORIGINATOR } from "./constants.ts"
 import type { TokenResponse } from "./jwt.ts"
+import { codexProxy } from "../../../config.ts"
 
 export interface PkceCodes {
   verifier: string
@@ -41,6 +42,7 @@ export function buildAuthorizeUrl(pkce: PkceCodes, state: string): string {
 }
 
 export async function exchangeCodeForTokens(code: string, pkce: PkceCodes): Promise<TokenResponse> {
+  const proxyUrl = codexProxy()
   const response = await fetch(`${ISSUER}/oauth/token`, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -51,7 +53,8 @@ export async function exchangeCodeForTokens(code: string, pkce: PkceCodes): Prom
       client_id: CLIENT_ID,
       code_verifier: pkce.verifier,
     }).toString(),
-  })
+    ...(proxyUrl ? { proxy: proxyUrl } : {}),
+  } as RequestInit & { proxy?: string })
   if (!response.ok) throw new Error(`Token exchange failed: ${response.status} ${await response.text()}`)
   return (await response.json()) as TokenResponse
 }

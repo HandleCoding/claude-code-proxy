@@ -16,6 +16,7 @@ export interface FileConfig {
     userAgent?: string
     model?: string
     effort?: string
+    proxy?: string
   }
   kimi?: {
     userAgent?: string
@@ -87,11 +88,12 @@ function validate(raw: unknown): FileConfig {
     return acc as NonNullable<FileConfig[K]>
   }
 
-  const codex = validateStringSection("codex", ["originator", "userAgent", "model", "effort"], {
+  const codex = validateStringSection("codex", ["originator", "userAgent", "model", "effort", "proxy"], {
     originator: "string",
     userAgent: "string",
     model: "string",
     effort: "string",
+    proxy: "string",
   })
   if (codex) out.codex = codex
 
@@ -191,6 +193,11 @@ export function codexModel(): string | undefined {
 export function codexEffort(): string | undefined {
   const c = getConfig()
   return emptyOrUnset(c.env.CCP_CODEX_EFFORT) ?? emptyOrUnset(c.file.codex?.effort)
+}
+
+export function codexProxy(): string | undefined {
+  const c = getConfig()
+  return emptyOrUnset(c.env.CCP_CODEX_PROXY) ?? emptyOrUnset(c.env.HTTPS_PROXY) ?? emptyOrUnset(c.env.HTTP_PROXY) ?? emptyOrUnset(c.file.codex?.proxy)
 }
 
 export function kimiUserAgent(defaultValue: string): string {

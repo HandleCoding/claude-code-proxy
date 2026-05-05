@@ -1,10 +1,19 @@
 import { CLIENT_ID, ISSUER } from "./constants.ts"
 import type { TokenResponse } from "./jwt.ts"
+import { codexProxy } from "../../../config.ts"
 
 const POLL_SAFETY_MARGIN_MS = 3000
 
+function proxyFetch(url: string, opts: RequestInit): Promise<Response> {
+  const proxyUrl = codexProxy()
+  return fetch(url, {
+    ...opts,
+    ...(proxyUrl ? { proxy: proxyUrl } : {}),
+  } as RequestInit & { proxy?: string })
+}
+
 export async function runDeviceLogin(): Promise<TokenResponse> {
-  const init = await fetch(`${ISSUER}/api/accounts/deviceauth/usercode`, {
+  const init = await proxyFetch(`${ISSUER}/api/accounts/deviceauth/usercode`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ client_id: CLIENT_ID }),
@@ -20,7 +29,7 @@ export async function runDeviceLogin(): Promise<TokenResponse> {
   console.log(`\nVisit: ${ISSUER}/codex/device\nEnter code: ${data.user_code}\n`)
 
   while (true) {
-    const resp = await fetch(`${ISSUER}/api/accounts/deviceauth/token`, {
+    const resp = await proxyFetch(`${ISSUER}/api/accounts/deviceauth/token`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -30,7 +39,7 @@ export async function runDeviceLogin(): Promise<TokenResponse> {
     })
     if (resp.ok) {
       const body = (await resp.json()) as { authorization_code: string; code_verifier: string }
-      const tokenResp = await fetch(`${ISSUER}/oauth/token`, {
+      const tokenResp = await proxyFetch(`${ISSUER}/oauth/token`, {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
         body: new URLSearchParams({
